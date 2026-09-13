@@ -65,16 +65,31 @@ document.getElementById('login-change-url').addEventListener('click', function (
 
 document.getElementById('login-btn').addEventListener('click', async function () {
   const pw = document.getElementById('login-password').value;
-  document.getElementById('login-error').hidden = true;
+  const errEl = document.getElementById('login-error');
+  errEl.hidden = true;
   state.token = pw; // auth 액션은 token 필드를 비밀번호로 비교함
-  const check = await api('auth', {}).catch(function () { return null; });
+
+  let check = null;
+  let connectFailed = false;
+  try {
+    check = await api('auth', {});
+  } catch (err) {
+    connectFailed = true;
+  }
+
   if (check && check.ok) {
     localStorage.setItem(LS_TOKEN, pw);
     boot();
-  } else {
-    state.token = '';
-    document.getElementById('login-error').hidden = false;
+    return;
   }
+
+  state.token = '';
+  if (connectFailed || !check) {
+    errEl.textContent = '백엔드 서버에 연결할 수 없습니다. 백엔드 주소(웹 앱 URL)가 정확한지, Apps Script 배포 설정의 "액세스 권한"이 "모든 사용자"로 되어 있는지 확인해주세요.';
+  } else {
+    errEl.textContent = '비밀번호가 올바르지 않습니다.';
+  }
+  errEl.hidden = false;
 });
 
 document.getElementById('logout-btn').addEventListener('click', function () {
@@ -364,7 +379,7 @@ function renderColumnMapping() {
     });
   });
 
-  // 저장된 매핑 자동 적용
+  // 저장된 매핑이 있으면 그대로 적용, 없으면 헤더 이름으로 자동 추정
   const key = 'kh_colmap_' + state.uploadHeaders.join('|');
   const saved = localStorage.getItem(key);
   if (saved) {
@@ -376,8 +391,38 @@ function renderColumnMapping() {
     if (map.sign !== undefined) document.getElementById('map-sign').value = map.sign;
     if (map.in !== undefined) document.getElementById('map-in').value = map.in;
     if (map.out !== undefined) document.getElementById('map-out').value = map.out;
+  } else {
+    guessColumnMapping();
   }
   toggleAmountMode();
+}
+
+function guessColumnIndex(keywords) {
+  for (let i = 0; i < state.uploadHeaders.length; i++) {
+    const h = String(state.uploadHeaders[i] || '');
+    if (keywords.some(function (k) { return h.includes(k); })) return i;
+  }
+  return -1;
+}
+
+function guessColumnMapping() {
+  const dateGuess = guessColumnIndex(['일자', '일시', '날짜']);
+  const memoGuess = guessColumnIndex(['적요', '내용', '메모']);
+  const inGuess = guessColumnIndex(['입금']);
+  const outGuess = guessColumnIndex(['출금']);
+  const amountGuess = guessColumnIndex(['금액']);
+
+  if (dateGuess >= 0) document.getElementById('map-date').value = dateGuess;
+  if (memoGuess >= 0) document.getElementById('map-memo').value = memoGuess;
+
+  if (inGuess >= 0 && outGuess >= 0) {
+    document.getElementById('map-amount-mode').value = 'separate';
+    document.getElementById('map-in').value = inGuess;
+    document.getElementById('map-out').value = outGuess;
+  } else if (amountGuess >= 0) {
+    document.getElementById('map-amount-mode').value = 'single';
+    document.getElementById('map-amount').value = amountGuess;
+  }
 }
 
 document.getElementById('map-amount-mode').addEventListener('change', toggleAmountMode);
